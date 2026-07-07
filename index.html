@@ -344,22 +344,62 @@ function fbsWriteOrders(rowsArr,fdate,cb){
   var CH=400,chunks=Math.ceil(rowsArr.length/CH)||0;
   var writes=[];
   for(var i=0;i<chunks;i++){writes.push(fbsSet('wms_orders','chunk_'+i,{data:JSON.stringify(rowsArr.slice(i*CH,(i+1)*CH))}));}
+  var ts=Date.now();
   Promise.all(writes.map(function(p){return p.catch(function(){});})).then(function(){
-    fbsSet('wms_meta','session',{fdate:fdate||'',chunks:chunks,ts:Date.now()}).then(function(){if(cb)cb(true);}).catch(function(){if(cb)cb(false);});
+    fbsSet('wms_meta','session',{fdate:fdate||'',chunks:chunks,ts:ts}).then(function(){if(cb)cb(true,ts);}).catch(function(){if(cb)cb(false,ts);});
   });
 }
 function fbsLoadOrders(cb){
   fetch(FBS_BASE+'wms_meta/session?key='+FBS_KEY).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(j){
-    var meta=fbsDec(j.fields),chunks=meta.chunks||0,fdate=meta.fdate||'';
-    if(!chunks){cb(null,fdate);return;}
+    var meta=fbsDec(j.fields),chunks=meta.chunks||0,fdate=meta.fdate||'',ts=meta.ts||0;
+    if(!chunks){cb(null,fdate,ts);return;}
     var parts=new Array(chunks),got=0,bad=false;
     for(var i=0;i<chunks;i++)(function(idx){
       fetch(FBS_BASE+'wms_orders/chunk_'+idx+'?key='+FBS_KEY).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(dj){
         try{parts[idx]=JSON.parse(fbsDec(dj.fields).data||'[]');}catch(e){parts[idx]=[];}
-        if(++got===chunks&&!bad)cb([].concat.apply([],parts),fdate);
-      }).catch(function(){if(!bad){bad=true;cb(null,fdate);}});
+        if(++got===chunks&&!bad)cb([].concat.apply([],parts),fdate,ts);
+      }).catch(function(){if(!bad){bad=true;cb(null,fdate,ts);}});
     })(i);
-  }).catch(function(){cb(null,'');});
+  }).catch(function(){cb(null,'',0);});
+}
+// session id (import timestamp) — used to reset device caches when a new file is imported
+function fbsGetSession(cb){
+  fetch(FBS_BASE+'wms_meta/session?key='+FBS_KEY).then(function(r){return r.ok?r.json():Promise.reject();})
+    .then(function(j){var m=fbsDec(j.fields);cb(m.ts||0,m.fdate||'');})
+    .catch(function(){cb(0,'');});
+}
+// list document ids of a collection
+function fbsListNames(coll,cb){
+  var out=[];
+  function page(tok){
+    var url=FBS_BASE+coll+'?key='+FBS_KEY+'&pageSize=300&mask.fieldPaths=__name__'+(tok?('&pageToken='+encodeURIComponent(tok)):'');
+    fetch(url).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(j){
+      (j.documents||[]).forEach(function(d){var p=d.name.split('/');out.push(p[p.length-1]);});
+      if(j.nextPageToken)page(j.nextPageToken);else cb(out);
+    }).catch(function(){cb(out);});
+  }
+  page(null);
+}
+// delete ALL docs in a collection (used when starting a new import session)
+function fbsWipe(coll,cb){
+  fbsListNames(coll,function(names){
+    if(!names.length){if(cb)cb();return;}
+    var i=0,inFlight=0,MAX=8;
+    function pump(){
+      while(inFlight<MAX&&i<names.length){
+        inFlight++;
+        (function(id){
+          fetch(FBS_BASE+coll+'/'+encodeURIComponent(id)+'?key='+FBS_KEY,{method:'DELETE'})
+            .catch(function(){}).then(function(){
+              inFlight--;
+              if(i>=names.length&&inFlight===0){if(cb)cb();}
+              else pump();
+            });
+        })(names[i++]);
+      }
+    }
+    pump();
+  });
 }
 
 
@@ -410,15 +450,23 @@ function loadRows(){
   }catch(e){}
   _applyRowsUI();
   // 2) refresh from Firebase (shared with office import) — works on Zebra with no local import
-  fbsLoadOrders(function(r,fd){
+  fbsLoadOrders(function(r,fd,ts){
+    // NEW SESSION check: office re-imported a file -> drop stale local scan cache
+    if(ts){
+      var old='';try{old=localStorage.getItem('gp_sess')||'';}catch(e){}
+      if(String(old)!==String(ts)){
+        SCANS={};saveScans();
+        try{localStorage.setItem('gp_sess',String(ts));}catch(e){}
+      }
+    }
     if(r&&r.length){
       rows=r;if(fd)fDate=fd;
       try{localStorage.setItem('gp_rows',JSON.stringify(rows));localStorage.setItem('gp_fdate',fDate);}catch(e){}
       _applyRowsUI();
     }
+    // pull latest scans AFTER the session check so resume works across devices
+    fbsLoadScans(function(m){if(m){for(var k in m)SCANS[k]=m[k];saveScans();}});
   });
-  // also pull latest scans so resume works across devices
-  fbsLoadScans(function(m){if(m){for(var k in m)SCANS[k]=m[k];saveScans();}});
 }
 // If Goods Prep (another tab) imports new order data, refresh our copy
 window.addEventListener('storage',function(ev){
