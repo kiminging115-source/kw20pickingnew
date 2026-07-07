@@ -234,6 +234,136 @@ function doneBeep(){playBeep();setTimeout(playBeep,190);setTimeout(playBeep,380)
 var USER='',rows=[],fDate='';
 var scanItems=[],scanLPN='',meta=null;
 
+// ═══════════ FIREBASE SYNC LAYER (Firestore REST) ═══════════
+var FBS_PROJ='product-management-42e04';
+var FBS_KEY='AIzaSyAgehd9UslGFUdP4Cw3dWVd3PWGqAXexsQ';
+var FBS_BASE='https://firestore.googleapis.com/v1/projects/'+FBS_PROJ+'/databases/(default)/documents/';
+
+function fbsEnc(obj){
+  var f={};
+  for(var k in obj){
+    var v=obj[k];
+    if(v===null||v===undefined)continue;
+    if(typeof v==='number'&&Math.floor(v)===v)f[k]={integerValue:String(v)};
+    else f[k]={stringValue:String(v)};
+  }
+  return {fields:f};
+}
+function fbsDec(fields){
+  var o={};fields=fields||{};
+  for(var k in fields){
+    var v=fields[k];
+    if(v.integerValue!==undefined)o[k]=parseInt(v.integerValue,10);
+    else if(v.stringValue!==undefined)o[k]=v.stringValue;
+    else if(v.doubleValue!==undefined)o[k]=v.doubleValue;
+  }
+  return o;
+}
+function fbsDocId(s){return String(s).replace(/[\/\.\#\$\[\]\*\s]/g,'_');}
+
+function fbsSet(coll,docId,obj){
+  var url=FBS_BASE+coll+'/'+encodeURIComponent(fbsDocId(docId))+'?key='+FBS_KEY;
+  return fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(fbsEnc(obj))})
+    .then(function(r){if(!r.ok)throw new Error('w');return true;})
+    .catch(function(e){fbsQueue('set',coll,docId,obj);throw e;});
+}
+function fbsDelete(coll,docId){
+  var url=FBS_BASE+coll+'/'+encodeURIComponent(fbsDocId(docId))+'?key='+FBS_KEY;
+  return fetch(url,{method:'DELETE'}).catch(function(){fbsQueue('del',coll,docId,null);});
+}
+function fbsQueue(op,coll,docId,obj){
+  try{var q=JSON.parse(localStorage.getItem('fb_queue')||'[]');q.push({op:op,coll:coll,docId:docId,obj:obj});localStorage.setItem('fb_queue',JSON.stringify(q));}catch(e){}
+}
+function fbsFlush(){
+  var q;try{q=JSON.parse(localStorage.getItem('fb_queue')||'[]');}catch(e){return;}
+  if(!q.length)return;
+  localStorage.setItem('fb_queue','[]');
+  var pending=q.slice();
+  (function next(){
+    if(!pending.length)return;
+    var it=pending.shift();
+    var p=(it.op==='del')?fbsDelete(it.coll,it.docId):fbsSet(it.coll,it.docId,it.obj);
+    Promise.resolve(p).then(next).catch(function(){next();});
+  })();
+}
+setInterval(fbsFlush,15000);
+
+function fbsList(coll,cb){
+  var out=[];
+  function page(tok){
+    var url=FBS_BASE+coll+'?key='+FBS_KEY+'&pageSize=300'+(tok?('&pageToken='+encodeURIComponent(tok)):'');
+    fetch(url).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(j){
+      (j.documents||[]).forEach(function(d){out.push(fbsDec(d.fields));});
+      if(j.nextPageToken)page(j.nextPageToken);else cb(out);
+    }).catch(function(){cb(out);});
+  }
+  page(null);
+}
+
+// ---- SCANS ----
+function fbsWriteScan(olpn,code,rec){
+  fbsSet('wms_scans',olpn+'__'+code,{olpn:olpn,code:String(code),n:rec.n,t:rec.t||'',d:rec.d||'',dt:rec.dt||'',u:rec.u||'',ua:Date.now()}).catch(function(){});
+}
+function fbsLoadScans(cb){
+  fbsList('wms_scans',function(arr){
+    var m={};arr.forEach(function(x){if(x.olpn&&x.code!=null)m[x.olpn+'|'+x.code]={n:x.n||0,t:x.t||'',d:x.d||'',dt:x.dt||'',u:x.u||''};});
+    cb(m);
+  });
+}
+// Incremental: only fetch scans changed since timestamp `ts` (ms). Fast + cheap for live polling.
+function fbsQueryScansSince(ts,cb){
+  var body={structuredQuery:{from:[{collectionId:'wms_scans'}],
+    where:{fieldFilter:{field:{fieldPath:'ua'},op:'GREATER_THAN',value:{integerValue:String(ts)}}},
+    orderBy:[{field:{fieldPath:'ua'},direction:'ASCENDING'}]}};
+  fetch(FBS_BASE.replace(/\/$/,'')+':runQuery?key='+FBS_KEY,
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){return r.ok?r.json():Promise.reject();}).then(function(arr){
+      var m={},maxUa=ts;
+      (arr||[]).forEach(function(row){
+        if(!row.document)return;
+        var x=fbsDec(row.document.fields);
+        if(x.olpn&&x.code!=null)m[x.olpn+'|'+x.code]={n:x.n||0,t:x.t||'',d:x.d||'',dt:x.dt||'',u:x.u||''};
+        if(x.ua&&x.ua>maxUa)maxUa=x.ua;
+      });
+      cb(m,maxUa);
+    }).catch(function(){cb(null,ts);});
+}
+// ---- ADJUSTS ----
+function fbsWriteAdjust(olpn,code,rec){
+  fbsSet('wms_adjusts',olpn+'__'+code,{olpn:olpn,code:String(code),n:rec.n,d:rec.d||'',u:rec.u||'',ua:Date.now()}).catch(function(){});
+}
+function fbsRemoveAdjust(olpn,code){fbsDelete('wms_adjusts',olpn+'__'+code);}
+function fbsLoadAdjusts(cb){
+  fbsList('wms_adjusts',function(arr){
+    var m={};arr.forEach(function(x){if(x.olpn&&x.code!=null)m[x.olpn+'|'+x.code]={n:x.n||0,d:x.d||'',u:x.u||''};});
+    cb(m);
+  });
+}
+// ---- ORDERS (chunked) ----
+function fbsWriteOrders(rowsArr,fdate,cb){
+  var CH=400,chunks=Math.ceil(rowsArr.length/CH)||0;
+  var writes=[];
+  for(var i=0;i<chunks;i++){writes.push(fbsSet('wms_orders','chunk_'+i,{data:JSON.stringify(rowsArr.slice(i*CH,(i+1)*CH))}));}
+  Promise.all(writes.map(function(p){return p.catch(function(){});})).then(function(){
+    fbsSet('wms_meta','session',{fdate:fdate||'',chunks:chunks,ts:Date.now()}).then(function(){if(cb)cb(true);}).catch(function(){if(cb)cb(false);});
+  });
+}
+function fbsLoadOrders(cb){
+  fetch(FBS_BASE+'wms_meta/session?key='+FBS_KEY).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(j){
+    var meta=fbsDec(j.fields),chunks=meta.chunks||0,fdate=meta.fdate||'';
+    if(!chunks){cb(null,fdate);return;}
+    var parts=new Array(chunks),got=0,bad=false;
+    for(var i=0;i<chunks;i++)(function(idx){
+      fetch(FBS_BASE+'wms_orders/chunk_'+idx+'?key='+FBS_KEY).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(dj){
+        try{parts[idx]=JSON.parse(fbsDec(dj.fields).data||'[]');}catch(e){parts[idx]=[];}
+        if(++got===chunks&&!bad)cb([].concat.apply([],parts),fdate);
+      }).catch(function(){if(!bad){bad=true;cb(null,fdate);}});
+    })(i);
+  }).catch(function(){cb(null,'');});
+}
+
+
+
 // ══════════ LOGIN ══════════
 var ui=document.getElementById('userIn');
 ui.addEventListener('input',function(){document.getElementById('userX').style.display=this.value?'block':'none';});
@@ -265,17 +395,40 @@ function enterApp(){
 })();
 
 // ══════════ DATA (shared with Goods Prep via localStorage) ══════════
+function _applyRowsUI(){
+  var nd=document.getElementById('noData'),lw=document.getElementById('lpnWrap');
+  if(rows.length===0){nd.style.display='';lw.style.display='none';}
+  else{nd.style.display='none';lw.style.display='flex';setTimeout(function(){var l=document.getElementById('lpnIn');if(l&&document.getElementById('pgLpn').style.display!=='none')l.focus();},100);}
+}
 function loadRows(){
+  // 1) instant: from local cache
   rows=[];
   try{
     var sr=localStorage.getItem('gp_rows');
     if(sr)rows=JSON.parse(sr)||[];
     fDate=localStorage.getItem('gp_fdate')||'';
   }catch(e){}
-  var nd=document.getElementById('noData'),lw=document.getElementById('lpnWrap');
-  if(rows.length===0){nd.style.display='';lw.style.display='none';}
-  else{nd.style.display='none';lw.style.display='flex';}
+  _applyRowsUI();
+  // 2) refresh from Firebase (shared with office import) — works on Zebra with no local import
+  fbsLoadOrders(function(r,fd){
+    if(r&&r.length){
+      rows=r;if(fd)fDate=fd;
+      try{localStorage.setItem('gp_rows',JSON.stringify(rows));localStorage.setItem('gp_fdate',fDate);}catch(e){}
+      _applyRowsUI();
+    }
+  });
+  // also pull latest scans so resume works across devices
+  fbsLoadScans(function(m){if(m){for(var k in m)SCANS[k]=m[k];saveScans();}});
 }
+// If Goods Prep (another tab) imports new order data, refresh our copy
+window.addEventListener('storage',function(ev){
+  if(ev.key==='gp_rows'){
+    if(document.getElementById('pgLpn').style.display!=='none')loadRows();
+  }
+  if(ev.key==='gp_scans'){
+    loadScans();
+  }
+});
 function importFile(inp){
   var f=inp.files[0];if(!f)return;
   if(typeof XLSX==='undefined'){alert('Excel library not loaded (no internet). Please import via the Goods Prep app instead.');return;}
@@ -301,6 +454,7 @@ function importFile(inp){
         localStorage.setItem('gp_rows',JSON.stringify(rows));
         localStorage.setItem('gp_fdate',fDate);
       }catch(e2){}
+      fbsWriteOrders(rows,fDate,function(){});
       loadRows();
       toast(rows.length+' rows imported',false);
       setTimeout(function(){document.getElementById('lpnIn').focus();},400);
@@ -319,8 +473,10 @@ function recordScan(olpn,code,n,t){
   var now=new Date();
   var d=now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2)+'-'+('0'+now.getDate()).slice(-2);
   var dt=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear()+' '+(t||'');
-  SCANS[sKey(olpn,code)]={n:n,t:t||'',d:d,dt:dt,u:USER};
+  var rec={n:n,t:t||'',d:d,dt:dt,u:USER};
+  SCANS[sKey(olpn,code)]=rec;
   saveScans();
+  fbsWriteScan(olpn,code,rec);
 }
 
 // ══════════ TOAST ══════════
