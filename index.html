@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Picking</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif;}
+:root{--blue:#1565C0;--dark:#1A2332;--gray-bg:#F4F6F9;--gray-border:#DEE2E9;--gray-text:#6B7280;}
+body{background:var(--gray-bg);min-height:100vh;}
+
+/* ── LOGIN ── */
+#pgLogin{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:linear-gradient(135deg,#0a1035 0%,#1a1060 35%,#3d1382 65%,#160a4a 100%);overflow:hidden;}
+#pgLogin::before{content:'';position:absolute;inset:0;
+  background-image:radial-gradient(circle at 20% 30%,rgba(0,180,255,.25),transparent 40%),
+    radial-gradient(circle at 80% 70%,rgba(190,60,255,.25),transparent 40%),
+    radial-gradient(rgba(255,255,255,.07) 1px,transparent 1px);
+  background-size:100% 100%,100% 100%,22px 22px;}
+.login-card{position:relative;background:#fff;border-radius:10px;padding:44px 38px 30px;width:100%;max-width:420px;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center;}
+.login-logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:30px;}
+.login-logo .lg{background:#D32F2F;color:#fff;font-weight:900;font-size:13px;line-height:1;padding:6px 7px;border-radius:4px;letter-spacing:.5px;}
+.login-logo span{font-size:26px;font-weight:700;color:var(--dark);}
+.login-field{text-align:left;margin-bottom:34px;}
+.login-field label{font-size:14px;color:#555;display:block;margin-bottom:2px;}
+.login-in-wrap{position:relative;}
+.login-in{width:100%;border:none;border-bottom:1.5px solid #bbb;padding:9px 30px 9px 2px;font-size:17px;outline:none;background:transparent;}
+.login-in:focus{border-bottom-color:#7C4DFF;}
+.login-x{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;color:#999;font-size:15px;cursor:pointer;display:none;}
+.login-btn{width:100%;border:none;border-radius:28px;padding:14px;font-size:15px;font-weight:700;color:#fff;cursor:pointer;
+  background:linear-gradient(90deg,#00B0FF,#7C4DFF,#B347EA);letter-spacing:.5px;}
+.login-btn:hover{filter:brightness(1.08);}
+.login-foot{margin-top:34px;font-size:13px;color:#444;font-weight:600;}
+.login-foot small{display:block;font-weight:400;color:#888;margin-top:3px;font-size:11px;}
+.login-err{color:#D32F2F;font-size:12px;font-weight:600;margin:-24px 0 18px;display:none;text-align:left;}
+
+/* ── APP SHELL ── */
+#app{display:none;min-height:100vh;}
+.topbar{background:#fff;height:52px;display:flex;align-items:center;padding:0 14px;gap:12px;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);position:sticky;top:0;z-index:50;}
+.topbar .tlogo{background:#D32F2F;color:#fff;font-weight:900;font-size:10px;padding:4px 5px;border-radius:3px;}
+.topbar .ttitle{font-size:15px;font-weight:600;color:var(--dark);flex:1;}
+.user-chip{display:inline-flex;align-items:center;gap:6px;background:var(--gray-bg);border:1px solid var(--gray-border);
+  border-radius:16px;padding:4px 12px 4px 5px;font-size:12px;font-weight:700;color:var(--dark);}
+.user-chip .uic{width:22px;height:22px;border-radius:50%;background:#F9A825;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;}
+.logout-btn{background:none;border:1px solid var(--gray-border);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--gray-text);cursor:pointer;}
+.logout-btn:hover{background:var(--gray-bg);color:var(--dark);}
+.content{padding:14px;max-width:1500px;margin:0 auto;}
+
+/* ── PANEL ── */
+.panel{background:#fff;border:1px solid var(--gray-border);border-top:3px solid #1E88E5;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+.p-head{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #EEF1F5;}
+.p-title{font-size:15px;font-weight:600;color:var(--dark);display:flex;align-items:center;gap:8px;}
+.p-badges{display:flex;gap:6px;}
+.badge{display:inline-flex;align-items:center;gap:4px;background:#1E88E5;color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:3px 8px;}
+.p-body{padding:14px;}
+.olpn-line{font-size:14px;font-weight:700;color:var(--dark);margin-bottom:10px;}
+.bc-wrap{display:flex;gap:8px;}
+.bc-in{flex:1;border:1.5px solid var(--gray-border);border-radius:6px;padding:11px 14px;font-size:16px;outline:none;}
+.bc-in:focus{border-color:#1E88E5;box-shadow:0 0 0 3px rgba(30,136,229,.15);}
+.bc-ico{flex:0 0 44px;background:#1E88E5;border:none;border-radius:6px;color:#fff;display:flex;align-items:center;justify-content:center;cursor:default;}
+
+/* ── TOAST ── */
+#toast{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-15px);background:#fff;border-radius:8px;
+  box-shadow:0 8px 30px rgba(0,0,0,.25);padding:16px 34px 16px 18px;display:flex;align-items:center;gap:14px;
+  z-index:1000;opacity:0;pointer-events:none;transition:all .25s;min-width:300px;}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
+#toast .tk{width:38px;height:38px;border-radius:50%;border:2.5px solid #4CAF50;color:#4CAF50;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;}
+#toast.err .tk{border-color:#E53935;color:#E53935;}
+#toast .tmsg{font-size:16px;font-weight:700;color:var(--dark);}
+
+/* ── PHOTO ── */
+.photo-box{display:none;text-align:center;margin:14px 0;}
+.photo-box img{max-height:210px;max-width:100%;border-radius:8px;border:1px solid var(--gray-border);box-shadow:0 2px 10px rgba(0,0,0,.12);}
+.photo-box .cap{font-size:12px;font-weight:700;color:var(--dark);margin-top:5px;}
+
+/* ── PICK TABLES ── */
+.cols{display:flex;gap:14px;align-items:flex-start;margin-top:6px;}
+.col{flex:1;min-width:0;}
+.pk-h{display:flex;background:#000;color:#fff;font-size:12px;font-weight:700;border-radius:2px;overflow:hidden;}
+.pk-h>div{padding:9px 6px;text-align:center;}
+.h-size{flex:0 0 54px;}
+.h-prod{flex:1;text-align:center;}
+.h-order{flex:0 0 62px;}
+.h-scan{flex:0 0 62px;}
+.rowi{display:flex;align-items:stretch;background:#F8D7DA;border-bottom:1px solid rgba(0,0,0,.06);cursor:pointer;}
+.rowi.done{background:#D4EDDA;cursor:default;}
+.rowi.part{background:#FFF3CD;}
+.rowi.flash{animation:fl .5s;}
+@keyframes fl{0%{box-shadow:inset 0 0 0 3px rgba(22,163,74,.6);}100%{box-shadow:inset 0 0 0 0 rgba(22,163,74,0);}}
+.c-size{flex:0 0 54px;display:flex;align-items:flex-start;justify-content:flex-end;padding:10px 10px 0 0;font-size:14px;font-weight:600;}
+.c-body{flex:1;padding:9px 6px;min-width:0;}
+.c-name{font-size:13.5px;font-weight:500;color:#1a1a1a;line-height:1.3;word-break:break-word;}
+.c-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;}
+.tag{font-size:10.5px;font-weight:700;color:#fff;border-radius:3px;padding:2px 7px;display:inline-flex;align-items:center;gap:3px;}
+.tag.loc{background:#1E88E5;}
+.tag.code{background:#37474F;}
+.tag.time{background:#00838F;}
+.c-order,.c-scan{flex:0 0 62px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;}
+.c-scan{color:#555;}
+.rowi.done .c-scan{color:#1B5E20;}
+.empty{font-size:12px;color:var(--gray-text);text-align:center;padding:20px 6px;border:1px dashed var(--gray-border);border-radius:6px;margin-top:4px;background:#fff;}
+.backbtn{margin-top:14px;background:var(--dark);color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;}
+
+/* ── NO DATA / IMPORT ── */
+.nodata{background:#FFF6E0;border:1px solid #F5D98A;border-radius:8px;padding:18px;font-size:13px;font-weight:600;color:#7A5B00;line-height:1.8;}
+.nodata input{margin-top:8px;font-size:13px;}
+
+@media(max-width:760px){
+  .cols{flex-direction:column;}
+  .content{padding:10px;}
+  .photo-box img{max-height:160px;}
+  .c-order,.c-scan{flex-basis:48px;font-size:20px;}
+  .h-order,.h-scan{flex-basis:48px;}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="pgLogin">
+  <div class="login-card">
+    <div class="login-logo"><span class="lg">DC<br>WMS</span><span>Log In</span></div>
+    <div class="login-field">
+      <label>&#3619;&#3627;&#3633;&#3626;&#3614;&#3609;&#3633;&#3585;&#3591;&#3634;&#3609;</label>
+      <div class="login-in-wrap">
+        <input type="text" id="userIn" class="login-in" autocomplete="off" inputmode="numeric">
+        <button class="login-x" id="userX" onclick="clearUser()">&#10005;</button>
+      </div>
+    </div>
+    <div class="login-err" id="loginErr">Please enter your employee ID</div>
+    <button class="login-btn" onclick="doLogin()">&#10162; LOG IN</button>
+    <div class="login-foot">DC Picking<small>Copyright &#169; 2026</small></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <span class="tlogo">DC<br>WMS</span>
+    <span class="ttitle" id="topTitle">Picking LPN</span>
+    <span class="user-chip"><span class="uic">&#128100;</span><span id="userLbl"></span></span>
+    <button class="logout-btn" onclick="doLogout()">Log out</button>
+  </div>
+  <div class="content">
+
+    <!-- LPN PAGE -->
+    <div id="pgLpn">
+      <div class="panel">
+        <div class="p-head">
+          <span class="p-title">Picking</span>
+          <span class="p-badges" id="lpnBadges" style="visibility:hidden">
+            <span class="badge" id="bRoute"></span><span class="badge" id="bStore"></span>
+          </span>
+        </div>
+        <div class="p-body">
+          <div id="noData" class="nodata" style="display:none">
+            &#9888;&#65039; No order data found on this device.<br>
+            Option 1: open the Goods Prep app on this device and import the Cube_Break_Full file (data is shared automatically).<br>
+            Option 2: import the .xlsx file here directly:<br>
+            <input type="file" id="fIn" accept=".xlsx" onchange="importFile(this)">
+          </div>
+          <div class="bc-wrap" id="lpnWrap">
+            <input type="text" id="lpnIn" class="bc-in" placeholder="Barcode" autocomplete="off" inputmode="numeric">
+            <span class="bc-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 5v14M7 5v14M11 5v14M15 5v14M19 5v14M21 5v14"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRODUCT PAGE -->
+    <div id="pgProd" style="display:none">
+      <div class="panel">
+        <div class="p-head">
+          <span class="p-title"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="1"/><path d="M6 7V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v3"/><path d="M6 11h4M6 15h4"/></svg><span id="prodTitle">Picking</span></span>
+          <span class="p-badges">
+            <span class="badge" id="bRoute2"></span><span class="badge" id="bStore2"></span>
+          </span>
+        </div>
+        <div class="p-body">
+          <div class="olpn-line">oLPN : <span id="olpnLbl"></span></div>
+          <div class="bc-wrap">
+            <input type="text" id="bcIn" class="bc-in" placeholder="Barcode" autocomplete="off">
+            <span class="bc-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 5v14M7 5v14M11 5v14M15 5v14M19 5v14M21 5v14"/></svg></span>
+          </div>
+          <div class="photo-box" id="photoBox"><img id="photoImg" alt=""><div class="cap" id="photoCap"></div></div>
+          <div class="cols">
+            <div class="col">
+              <div class="pk-h"><div class="h-size">Size</div><div class="h-prod">Product</div><div class="h-order">Order</div><div class="h-scan">Scan</div></div>
+              <div id="listPend"></div>
+            </div>
+            <div class="col">
+              <div class="pk-h"><div class="h-size">Size</div><div class="h-prod">Product</div><div class="h-order">Order</div><div class="h-scan">Scan</div></div>
+              <div id="listDone"></div>
+            </div>
+          </div>
+          <button class="backbtn" onclick="backToLpn()">&#8592; Back to LPN</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"><span class="tk">&#10003;</span><span class="tmsg" id="toastMsg"></span></div>
+
+<script>
+// ══════════ SOUNDS ══════════
+var SCAN_BEEP='data:audio/wav;base64,UklGRrQbAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YZAbAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD8/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA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';
+var _pool=[],_pi=0;
+(function(){for(var i=0;i<4;i++){var a=new Audio(SCAN_BEEP);a.preload='auto';_pool.push(a);}})();
+function playBeep(){try{var a=_pool[_pi=(_pi+1)%_pool.length];a.currentTime=0;a.play().catch(function(){});}catch(e){}}
+var _actx=null;
+function errBeep(){
+  try{
+    if(!_actx)_actx=new (window.AudioContext||window.webkitAudioContext)();
+    var t=_actx.currentTime;
+    [[220,0,.18],[180,.05,.25]].forEach(function(p){
+      var o=_actx.createOscillator(),g=_actx.createGain();
+      o.connect(g);g.connect(_actx.destination);
+      o.type='sawtooth';o.frequency.value=p[0];
+      g.gain.setValueAtTime(.28,t+p[1]);
+      g.gain.exponentialRampToValueAtTime(.001,t+p[1]+p[2]);
+      o.start(t+p[1]);o.stop(t+p[1]+p[2]);
+    });
+  }catch(e){}
+}
+function doneBeep(){playBeep();setTimeout(playBeep,190);setTimeout(playBeep,380);}
+
+// ══════════ STATE ══════════
+var USER='',rows=[],fDate='';
+var scanItems=[],scanLPN='',meta=null;
+
+// ══════════ LOGIN ══════════
+var ui=document.getElementById('userIn');
+ui.addEventListener('input',function(){document.getElementById('userX').style.display=this.value?'block':'none';});
+ui.addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
+function clearUser(){ui.value='';ui.focus();document.getElementById('userX').style.display='none';}
+function doLogin(){
+  var v=ui.value.trim();
+  if(!v){document.getElementById('loginErr').style.display='block';ui.focus();return;}
+  USER=v;
+  try{sessionStorage.setItem('pk_user',v);}catch(e){}
+  enterApp();
+}
+function doLogout(){
+  USER='';try{sessionStorage.removeItem('pk_user');}catch(e){}
+  document.getElementById('app').style.display='none';
+  document.getElementById('pgLogin').style.display='flex';
+  clearUser();setTimeout(function(){ui.focus();},100);
+}
+function enterApp(){
+  document.getElementById('pgLogin').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('userLbl').textContent=USER;
+  loadRows();
+  showLpnPage();
+}
+// auto-login if session exists
+(function(){
+  try{var u=sessionStorage.getItem('pk_user');if(u){USER=u;}}catch(e){}
+})();
+
+// ══════════ DATA (shared with Goods Prep via localStorage) ══════════
+function loadRows(){
+  rows=[];
+  try{
+    var sr=localStorage.getItem('gp_rows');
+    if(sr)rows=JSON.parse(sr)||[];
+    fDate=localStorage.getItem('gp_fdate')||'';
+  }catch(e){}
+  var nd=document.getElementById('noData'),lw=document.getElementById('lpnWrap');
+  if(rows.length===0){nd.style.display='';lw.style.display='none';}
+  else{nd.style.display='none';lw.style.display='flex';}
+}
+function importFile(inp){
+  var f=inp.files[0];if(!f)return;
+  if(typeof XLSX==='undefined'){alert('Excel library not loaded (no internet). Please import via the Goods Prep app instead.');return;}
+  var r=new FileReader();
+  r.onload=function(e){
+    try{
+      var wb=XLSX.read(e.target.result,{type:'array'});
+      var ws=wb.Sheets['Order'];
+      if(!ws){alert('Sheet "Order" not found.');return;}
+      var raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
+      rows=[];
+      for(var i=1;i<raw.length;i++){
+        var rx=raw[i];
+        if(!rx||!rx[24])continue;
+        var mod=String(rx[24]||'').trim();
+        if(!mod)continue;
+        rows.push({shiftNo:rx[0],routeNo:rx[2],storeId:String(rx[3]||'').trim(),storeName:String(rx[4]||'').trim(),
+          binLoc:String(rx[7]||'').trim(),prodCode:rx[8],prodName:String(rx[9]||'').trim(),prodSize:rx[10]||'',
+          pickQty:parseInt(rx[16])||0,olpn:String(rx[19]||'').trim(),module:mod});
+      }
+      var n=new Date();fDate=('0'+n.getDate()).slice(-2)+'/'+('0'+(n.getMonth()+1)).slice(-2)+'/'+n.getFullYear();
+      try{
+        localStorage.setItem('gp_rows',JSON.stringify(rows));
+        localStorage.setItem('gp_fdate',fDate);
+      }catch(e2){}
+      loadRows();
+      toast(rows.length+' rows imported',false);
+      setTimeout(function(){document.getElementById('lpnIn').focus();},400);
+    }catch(err){alert('Error: '+err.message);}
+  };
+  r.readAsArrayBuffer(f);
+}
+
+// ══════════ GLOBAL SCAN STORE (shared with Goods Prep Monitor/Reports) ══════════
+var SCANS={};
+function loadScans(){try{SCANS=JSON.parse(localStorage.getItem('gp_scans')||'{}')||{};}catch(e){SCANS={};}}
+function saveScans(){try{localStorage.setItem('gp_scans',JSON.stringify(SCANS));}catch(e){}}
+loadScans();
+function sKey(olpn,code){return olpn+'|'+code;}
+function recordScan(olpn,code,n,t){
+  var now=new Date();
+  var d=now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2)+'-'+('0'+now.getDate()).slice(-2);
+  var dt=('0'+now.getDate()).slice(-2)+'/'+('0'+(now.getMonth()+1)).slice(-2)+'/'+now.getFullYear()+' '+(t||'');
+  SCANS[sKey(olpn,code)]={n:n,t:t||'',d:d,dt:dt,u:USER};
+  saveScans();
+}
+
+// ══════════ TOAST ══════════
+var _tt=null;
+function toast(msg,isErr,ms){
+  var t=document.getElementById('toast');
+  document.getElementById('toastMsg').textContent=msg;
+  t.className=isErr?'on err':'on';
+  t.querySelector('.tk').innerHTML=isErr?'&#10005;':'&#10003;';
+  clearTimeout(_tt);
+  _tt=setTimeout(function(){t.className='';},ms||1600);
+}
+
+// ══════════ FIREBASE PHOTOS + BARCODES ══════════
+var FB_KEY='AIzaSyAgehd9UslGFUdP4Cw3dWVd3PWGqAXexsQ';
+var FB_PROJ='product-management-42e04';
+var IMG_CACHE={},BC_CACHE={},BC_MAP={};
+function _parseBc(j){
+  var bcs=[],flds=j&&j.fields||{};
+  ['case','pack','unit'].forEach(function(s){
+    var sf=flds[s]&&flds[s].mapValue&&flds[s].mapValue.fields||{};
+    ['b1','b2','b3','b4'].forEach(function(b){
+      var v=sf[b]&&(sf[b].stringValue||sf[b].integerValue)||null;
+      if(v){v=String(v).trim();if(v&&v!=='0')bcs.push(v);}
+    });
+  });
+  return bcs;
+}
+function fetchImg(code,cb){
+  code=String(code).trim();
+  if(IMG_CACHE[code]!==undefined){if(cb)cb(IMG_CACHE[code]);return;}
+  var pad=code;while(pad.length<7)pad='0'+pad;
+  var ids=pad===code?[code]:[pad,code];
+  var mask='mask.fieldPaths=imageUrl&mask.fieldPaths=case&mask.fieldPaths=pack&mask.fieldPaths=unit';
+  function tryId(i){
+    if(i>=ids.length){IMG_CACHE[code]=null;BC_CACHE[code]=[];if(cb)cb(null);return;}
+    var url='https://firestore.googleapis.com/v1/projects/'+FB_PROJ+'/databases/(default)/documents/products/'
+      +encodeURIComponent(ids[i])+'?key='+FB_KEY+'&'+mask;
+    fetch(url).then(function(r){return r.ok?r.json():Promise.reject();}).then(function(j){
+      var img=j.fields&&j.fields.imageUrl&&j.fields.imageUrl.stringValue||null;
+      var bcs=_parseBc(j);
+      IMG_CACHE[code]=img||null;BC_CACHE[code]=bcs;
+      bcs.forEach(function(b){BC_MAP[b]=code;});
+      if(cb)cb(img||null);
+    }).catch(function(){tryId(i+1);});
+  }
+  tryId(0);
+}
+
+// ══════════ LPN PAGE ══════════
+function showLpnPage(){
+  document.getElementById('pgLpn').style.display='';
+  document.getElementById('pgProd').style.display='none';
+  document.getElementById('topTitle').textContent='Picking LPN';
+  var l=document.getElementById('lpnIn');l.value='';
+  loadRows();
+  if(rows.length)setTimeout(function(){l.focus();},100);
+}
+document.getElementById('lpnIn').addEventListener('keydown',function(e){
+  if(e.key!=='Enter')return;
+  e.preventDefault();
+  var v=this.value.trim();this.value='';
+  if(!v)return;
+  loadLPN(v);
+});
+
+function loadLPN(lpn){
+  var fil=rows.filter(function(r){return r.olpn===lpn;});
+  if(fil.length===0){
+    errBeep();
+    toast('oLPN not found: '+lpn,true);
+    return;
+  }
+  scanLPN=lpn;
+  var map={},ord=[];
+  fil.forEach(function(r){
+    var k=String(r.prodCode);
+    if(!map[k]){map[k]={code:k,name:r.prodName,size:r.prodSize,bin:r.binLoc,qty:0,scan:0,time:''};ord.push(k);}
+    map[k].qty+=r.pickQty;
+  });
+  scanItems=ord.map(function(k){return map[k];});
+  // resume saved progress
+  scanItems.forEach(function(x){
+    var s=SCANS[sKey(lpn,x.code)];
+    if(s){x.scan=Math.min(s.n||0,x.qty);x.time=s.t||'';}
+  });
+  meta={route:fil[0].routeNo,store:fil[0].storeId,storeName:fil[0].storeName,module:fil[0].module};
+  playBeep();
+  // toast with module name (like reference app), then open product page
+  toast(meta.module,false,1300);
+  setTimeout(openProdPage,700);
+  // prefetch photos + barcodes
+  scanItems.forEach(function(x){fetchImg(x.code,function(img){updateThumb(x.code,img);});});
+}
+
+function openProdPage(){
+  document.getElementById('pgLpn').style.display='none';
+  document.getElementById('pgProd').style.display='';
+  document.getElementById('topTitle').textContent='Picking Product';
+  document.getElementById('prodTitle').textContent=meta.module+' Picking';
+  document.getElementById('olpnLbl').textContent=scanLPN;
+  document.getElementById('bRoute2').innerHTML='&#128506; '+meta.route;
+  document.getElementById('bStore2').innerHTML='&#127970; '+meta.store;
+  document.getElementById('bcIn').value='';
+  renderList();
+  updatePhoto();
+  setTimeout(function(){document.getElementById('bcIn').focus();},100);
+}
+
+function backToLpn(){
+  scanItems=[];scanLPN='';meta=null;
+  showLpnPage();
+}
+
+// ══════════ PRODUCT SCANNING ══════════
+document.getElementById('bcIn').addEventListener('keydown',function(e){
+  if(e.key!=='Enter')return;
+  e.preventDefault();
+  var v=this.value.trim();this.value='';
+  if(!v)return;
+  scanBarcode(v);
+});
+
+function scanBarcode(code){
+  var it=null;
+  if(BC_MAP[code]){
+    var m=BC_MAP[code];
+    for(var i=0;i<scanItems.length;i++){
+      if(scanItems[i].code===m&&scanItems[i].scan<scanItems[i].qty){it=scanItems[i];break;}
+    }
+  }
+  if(!it)for(var i=0;i<scanItems.length;i++){
+    var x=scanItems[i];
+    if(x.scan>=x.qty)continue;
+    if(x.code===code){it=x;break;}
+  }
+  if(!it)for(var i=0;i<scanItems.length;i++){
+    var x=scanItems[i];
+    if(x.scan>=x.qty)continue;
+    if(code.length>=4&&(code.indexOf(x.code)>-1||x.code.indexOf(code)>-1)){it=x;break;}
+  }
+  if(!it){
+    var mc=BC_MAP[code]||code;
+    var over=scanItems.some(function(x){return(x.code===mc||x.code===code)&&x.scan>=x.qty;});
+    errBeep();
+    toast(over?('Already complete: '+code):('Not found: '+code),true);
+    return;
+  }
+  it.scan++;
+  var n=new Date();
+  it.time=('0'+n.getHours()).slice(-2)+':'+('0'+n.getMinutes()).slice(-2)+':'+('0'+n.getSeconds()).slice(-2);
+  recordScan(scanLPN,it.code,it.scan,it.time);
+  it._flash=true;
+  playBeep();
+  renderList();
+  updatePhoto();
+  // complete?
+  var done=scanItems.every(function(x){return x.scan>=x.qty;});
+  if(done){
+    doneBeep();
+    toast('\u2714 '+scanLPN+' COMPLETE',false,2000);
+    setTimeout(backToLpn,1600);
+  }
+}
+
+function tapRow(i){
+  var it=scanItems[i];
+  if(!it||it.scan>=it.qty)return;
+  if(!confirm('Manual pick: '+it.name+'\n('+(it.scan+1)+'/'+it.qty+') ?'))return;
+  scanBarcode(it.code);
+  document.getElementById('bcIn').focus();
+}
+
+// ══════════ RENDER ══════════
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function rowHtml(x,isDone){
+  var cls='rowi'+(isDone?' done':(x.scan>0?' part':''))+(x._flash?' flash':'');
+  x._flash=false;
+  var tags='<span class="tag loc">&#128205; '+esc(x.bin)+'</span><span class="tag code">&#128290; '+esc(x.code)+'</span>';
+  if(isDone&&x.time)tags+='<span class="tag time">&#128337; '+x.time+'</span>';
+  return '<div class="'+cls+'" onclick="tapRow('+x._i+')">'
+    +'<div class="c-size">'+esc(x.size)+'</div>'
+    +'<div class="c-body"><div class="c-name">'+esc(x.name)+'</div><div class="c-tags">'+tags+'</div></div>'
+    +'<div class="c-order">'+x.qty+'</div><div class="c-scan">'+x.scan+'</div>'
+    +'</div>';
+}
+function renderList(){
+  var pend=[],done=[];
+  scanItems.forEach(function(x,i){x._i=i;(x.scan>=x.qty?done:pend).push(x);});
+  var ph='',dh='';
+  pend.forEach(function(x){ph+=rowHtml(x,false);});
+  done.forEach(function(x){dh+=rowHtml(x,true);});
+  document.getElementById('listPend').innerHTML=ph||'<div class="empty">All picked \u2713</div>';
+  document.getElementById('listDone').innerHTML=dh||'<div class="empty">Scanned items appear here</div>';
+}
+function updateThumb(code,img){
+  // thumbnails not shown in reference design; photo box only
+  updatePhoto();
+}
+function updatePhoto(){
+  var box=document.getElementById('photoBox'),im=document.getElementById('photoImg'),cap=document.getElementById('photoCap');
+  var it=null,label='';
+  for(var i=0;i<scanItems.length;i++){
+    if(scanItems[i].scan<scanItems[i].qty){it=scanItems[i];label='Next item';break;}
+  }
+  if(!it){
+    var t='';
+    scanItems.forEach(function(x){if(x.scan>0&&x.time>=t){t=x.time;it=x;}});
+    label='Completed';
+  }
+  if(!it){box.style.display='none';return;}
+  var ref=it;
+  fetchImg(ref.code,function(img){
+    if(!img||scanItems.indexOf(ref)===-1){box.style.display='none';return;}
+    im.src=img;
+    cap.textContent=label+': '+ref.name;
+    box.style.display='block';
+  });
+}
+
+// ══════════ BOOT ══════════
+(function(){
+  if(USER){enterApp();}
+  else{setTimeout(function(){ui.focus();},200);}
+})();
+</script>
+</body>
+</html>
