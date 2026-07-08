@@ -70,6 +70,7 @@ body{background:var(--gray-bg);min-height:100vh;}
 #toast .tk{width:38px;height:38px;border-radius:50%;border:2.5px solid #4CAF50;color:#4CAF50;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;}
 #toast.err .tk{border-color:#E53935;color:#E53935;}
 #toast .tmsg{font-size:16px;font-weight:700;color:var(--dark);}
+#toast .tsub{font-size:17px;font-weight:800;color:var(--dark);margin-top:4px;}
 
 /* ── PHOTO ── */
 .photo-box{display:none;text-align:center;margin:14px 0;}
@@ -549,9 +550,9 @@ function recordScan(olpn,code,n,t){
 
 // ══════════ TOAST ══════════
 var _tt=null;
-function toast(msg,isErr,ms){
+function toast(msg,isErr,ms,sub){
   var t=document.getElementById('toast');
-  document.getElementById('toastMsg').textContent=msg;
+  document.getElementById('toastMsg').innerHTML='<div>'+esc(msg)+'</div>'+(sub?'<div class="tsub">'+esc(sub)+'</div>':'');
   t.className=isErr?'on err':'on';
   t.querySelector('.tk').innerHTML=isErr?'&#10005;':'&#10003;';
   clearTimeout(_tt);
@@ -703,6 +704,7 @@ function scanBarcode(code){
   updatePhoto();
   // complete?
   var done=scanItems.every(function(x){return x.scan>=x.qty;});
+  if(!done)toast(it.name,false,1100,it.scan+' / '+it.qty);
   if(done){
     doneBeep();
     toast('\u2714 '+scanLPN+' COMPLETE',false,2000);
