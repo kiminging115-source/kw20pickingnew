@@ -459,14 +459,16 @@ function _applyRowsUI(){
   }
 }
 function loadRows(){
-  // 1) instant: from local cache
-  rows=[];
+  // 1) instant: from local cache — but NEVER wipe in-memory rows if the cache is empty/broken
+  var cached=[];
   try{
     var sr=localStorage.getItem('gp_rows');
-    if(sr)rows=JSON.parse(sr)||[];
-    fDate=localStorage.getItem('gp_fdate')||'';
+    if(sr)cached=JSON.parse(sr)||[];
+    var fd0=localStorage.getItem('gp_fdate');if(fd0)fDate=fd0;
   }catch(e){}
+  if(cached.length)rows=cached;
   if(rows.length)_rowsLoaded=true;
+  else _rowsLoaded=false; // force the "loading" state (not the no-data warning) while cloud re-checks
   _applyRowsUI();
   // 2) refresh from Firebase (shared with office import) — works on Zebra with no local import
   fbsLoadOrders(function(r,fd,ts){
