@@ -108,12 +108,15 @@ body{background:var(--gray-bg);min-height:100vh;}
 .nodata{background:#FFF6E0;border:1px solid #F5D98A;border-radius:8px;padding:18px;font-size:13px;font-weight:600;color:#7A5B00;line-height:1.8;}
 .nodata input{margin-top:8px;font-size:13px;}
 
+.pk-h-done{background:#1B7A3D;}
 @media(max-width:760px){
-  .cols{flex-direction:column;}
+  .cols{flex-direction:column;gap:10px;}
   .content{padding:10px;}
   .photo-box img{max-height:160px;}
   .c-order,.c-scan{flex-basis:48px;font-size:20px;}
   .h-order,.h-scan{flex-basis:48px;}
+  /* on phone, hide the Scanned panel until something has actually been scanned */
+  #colDone.hide-empty{display:none;}
 }
 </style>
 </head>
@@ -187,12 +190,12 @@ body{background:var(--gray-bg);min-height:100vh;}
           </div>
           <div class="photo-box" id="photoBox"><img id="photoImg" alt=""><div class="cap" id="photoCap"></div></div>
           <div class="cols">
-            <div class="col">
+            <div class="col" id="colPend">
               <div class="pk-h"><div class="h-size">Size</div><div class="h-prod">Product</div><div class="h-order">Order</div><div class="h-scan">Scan</div></div>
               <div id="listPend"></div>
             </div>
-            <div class="col">
-              <div class="pk-h"><div class="h-size">Size</div><div class="h-prod">Product</div><div class="h-order">Order</div><div class="h-scan">Scan</div></div>
+            <div class="col" id="colDone">
+              <div class="pk-h pk-h-done"><div class="h-size">Size</div><div class="h-prod">Product &#8212; Scanned</div><div class="h-order">Order</div><div class="h-scan">Scan</div></div>
               <div id="listDone"></div>
             </div>
           </div>
@@ -232,6 +235,7 @@ function doneBeep(){playBeep();setTimeout(playBeep,190);setTimeout(playBeep,380)
 
 // ══════════ STATE ══════════
 var USER='',rows=[],fDate='';
+var _noDataHTML='&#9888;&#65039; No order data found. Import the Cube_Break_Full file in the Goods Prep app on this device first &#8212; it syncs here automatically.';
 var scanItems=[],scanLPN='',meta=null;
 
 // ═══════════ FIREBASE SYNC LAYER (Firestore REST) ═══════════
@@ -435,10 +439,23 @@ function enterApp(){
 })();
 
 // ══════════ DATA (shared with Goods Prep via localStorage) ══════════
+var _rowsLoaded=false;
 function _applyRowsUI(){
   var nd=document.getElementById('noData'),lw=document.getElementById('lpnWrap');
-  if(rows.length===0){nd.style.display='';lw.style.display='none';}
-  else{nd.style.display='none';lw.style.display='flex';setTimeout(function(){var l=document.getElementById('lpnIn');if(l&&document.getElementById('pgLpn').style.display!=='none')l.focus();},100);}
+  if(rows.length>0){
+    nd.style.display='none';nd.innerHTML=_noDataHTML;
+    lw.style.display='flex';
+    setTimeout(function(){var l=document.getElementById('lpnIn');if(l&&document.getElementById('pgLpn').style.display!=='none')l.focus();},100);
+  }else if(!_rowsLoaded){
+    // still loading from cloud — show a quiet loading note, NOT the "no data" warning
+    lw.style.display='none';
+    nd.style.display='';
+    nd.innerHTML='<div style="text-align:center;color:#7A5B00">\u23f3 Loading order data\u2026</div>';
+  }else{
+    // cloud replied and there is genuinely no data
+    nd.style.display='';nd.innerHTML=_noDataHTML;
+    lw.style.display='none';
+  }
 }
 function loadRows(){
   // 1) instant: from local cache
@@ -448,10 +465,11 @@ function loadRows(){
     if(sr)rows=JSON.parse(sr)||[];
     fDate=localStorage.getItem('gp_fdate')||'';
   }catch(e){}
+  if(rows.length)_rowsLoaded=true;
   _applyRowsUI();
   // 2) refresh from Firebase (shared with office import) — works on Zebra with no local import
   fbsLoadOrders(function(r,fd,ts){
-    // NEW SESSION check: office re-imported a file -> drop stale local scan cache
+    _rowsLoaded=true;
     if(ts){
       var old='';try{old=localStorage.getItem('gp_sess')||'';}catch(e){}
       if(String(old)!==String(ts)){
@@ -462,9 +480,8 @@ function loadRows(){
     if(r&&r.length){
       rows=r;if(fd)fDate=fd;
       try{localStorage.setItem('gp_rows',JSON.stringify(rows));localStorage.setItem('gp_fdate',fDate);}catch(e){}
-      _applyRowsUI();
     }
-    // pull latest scans AFTER the session check so resume works across devices
+    _applyRowsUI();
     fbsLoadScans(function(m){if(m){for(var k in m)SCANS[k]=m[k];saveScans();}});
   });
 }
@@ -719,6 +736,8 @@ function renderList(){
   done.forEach(function(x){dh+=rowHtml(x,true);});
   document.getElementById('listPend').innerHTML=ph||'<div class="empty">All picked \u2713</div>';
   document.getElementById('listDone').innerHTML=dh||'<div class="empty">Scanned items appear here</div>';
+  var cd=document.getElementById('colDone');
+  if(cd)cd.classList.toggle('hide-empty',done.length===0);
 }
 function updateThumb(code,img){
   // thumbnails not shown in reference design; photo box only
